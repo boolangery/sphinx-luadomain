@@ -17,6 +17,7 @@ from docutils import nodes
 from docutils.parsers.rst import Directive, directives
 
 from sphinx import addnodes
+from sphinx.errors import *
 from sphinx.roles import XRefRole
 from sphinx.locale import l_, _
 from sphinx.domains import Domain, ObjType, Index
@@ -906,8 +907,9 @@ class LuaDomain(Domain):
             return '.'.join(filter(None, [modname, clsname, target]))
 
 
+
+
 def setup(app):
-    # type: (Sphinx) -> Dict[unicode, Any]
     app.add_domain(LuaDomain)
 
     return {
