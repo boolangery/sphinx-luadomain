@@ -172,7 +172,11 @@ class LuaObject(ObjectDescription):
         'noindex': directives.flag,
         'module': directives.unchanged,
         'annotation': directives.unchanged,
+        'virtual': directives.flag,
+        'abstract': directives.flag,
+        'deprecated': directives.flag,
     }
+
 
     doc_field_types = [
         LuaTypedField('parameter', label=l_('Parameters'),
@@ -200,6 +204,10 @@ class LuaObject(ObjectDescription):
         """May return a prefix to put before the object name in the
         signature.
         """
+        if 'virtual' in self.options:
+            return 'virtual '
+        if 'abstract' in self.options:
+            return 'abstract '
         return ''
 
     def needs_arglist(self):
@@ -442,7 +450,7 @@ class LuaClassmember(LuaObject):
             return 'static '
         elif self.objtype == 'classmethod':
             return 'classmethod '
-        return ''
+        return super(LuaClassmember, self).get_signature_prefix(sig)
 
     def get_index_text(self, modname, name_cls):
         # type: (unicode, unicode) -> unicode
