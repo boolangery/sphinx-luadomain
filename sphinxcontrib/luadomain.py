@@ -173,6 +173,7 @@ class LuaObject(ObjectDescription):
         'module': directives.unchanged,
         'annotation': directives.unchanged,
         'virtual': directives.flag,
+        'protected': directives.flag,
         'abstract': directives.flag,
         'deprecated': directives.flag,
     }
@@ -204,11 +205,15 @@ class LuaObject(ObjectDescription):
         """May return a prefix to put before the object name in the
         signature.
         """
+        prefix = []
+
         if 'virtual' in self.options:
-            return 'virtual '
+            prefix.append('virtual')
+        if 'protected' in self.options:
+            prefix.append('protected')
         if 'abstract' in self.options:
-            return 'abstract '
-        return ''
+            prefix.append('abstract')
+        return ' '.join(prefix) + ' '
 
     def needs_arglist(self):
         # type: () -> bool
