@@ -3,21 +3,17 @@
     sphinx.domains.lua
     ~~~~~~~~~~~~~~~~~~~~~
 
-    The Python domain.
+    The lua domain.
 
     :copyright: Copyright 2007-2017 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
 import re
-
 from six import iteritems
-
 from docutils import nodes
 from docutils.parsers.rst import Directive, directives
-
 from sphinx import addnodes
-from sphinx.errors import *
 from sphinx.roles import XRefRole
 from sphinx.locale import l_, _
 from sphinx.domains import Domain, ObjType, Index
@@ -25,13 +21,9 @@ from sphinx.directives import ObjectDescription
 from sphinx.util import logging
 from sphinx.util.nodes import make_refnode
 from sphinx.util.docfields import Field, GroupedField, TypedField
-
-if False:
-    # For type annotation
-    from typing import Any, Dict, Iterable, Iterator, List, Tuple, Union  # NOQA
-    from sphinx.application import Sphinx  # NOQA
-    from sphinx.builders import Builder  # NOQA
-    from sphinx.environment import BuildEnvironment  # NOQA
+from sphinx.environment import BuildEnvironment
+from sphinx.builders import Builder
+from typing import Any, Dict, Iterable, Iterator, List, Tuple, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -45,18 +37,17 @@ lua_sig_re = re.compile(
           ''', re.VERBOSE)
 
 
-def _pseudo_parse_arglist(signode, arglist):
-    # type: (addnodes.desc_signature, unicode) -> None
+def _pseudo_parse_arglist(sig_node: addnodes.desc_signature, arg_list: str) -> None:
     """"Parse" a list of arguments separated by commas.
 
     Arguments can have "optional" annotations given by enclosing them in
     brackets.  Currently, this will split at any comma, even if it's inside a
     string literal (e.g. default argument value).
     """
-    paramlist = addnodes.desc_parameterlist()
-    stack = [paramlist]
+    param_list = addnodes.desc_parameterlist()
+    stack = [param_list]
     try:
-        for argument in arglist.split(','):
+        for argument in arg_list.split(','):
             argument = argument.strip()
             ends_open = ends_close = 0
             while argument.startswith('['):
@@ -87,25 +78,24 @@ def _pseudo_parse_arglist(signode, arglist):
         # if there are too few or too many elements on the stack, just give up
         # and treat the whole argument list as one argument, discarding the
         # already partially populated paramlist node
-        signode += addnodes.desc_parameterlist()
-        signode[-1] += addnodes.desc_parameter(arglist, arglist)
+        sig_node += addnodes.desc_parameterlist()
+        sig_node[-1] += addnodes.desc_parameter(arg_list, arg_list)
     else:
-        signode += paramlist
+        sig_node += param_list
 
 
 # This override allows our inline type specifiers to behave like :class: link
 # when it comes to handling "." and "~" prefixes.
 class LuaXrefMixin(object):
     def make_xref(self,
-                  rolename,  # type: unicode
-                  domain,  # type: unicode
-                  target,  # type: unicode
-                  innernode=nodes.emphasis,  # type: nodes.Node
-                  contnode=None,  # type: nodes.Node
-                  env=None,  # type: BuildEnvironment
-                  ):
-        # type: (...) -> nodes.Node
-        result = super(LuaXrefMixin, self).make_xref(rolename, domain, target,  # type: ignore
+                  role_name: str,
+                  domain: str,
+                  target: str,
+                  innernode: type(nodes.Node) = nodes.emphasis,
+                  contnode: nodes.Node = None,
+                  env: BuildEnvironment = None,
+                  ) -> nodes.Node:
+        result = super(LuaXrefMixin, self).make_xref(role_name, domain, target,
                                                      innernode, contnode, env)
         result['refspecific'] = True
         if target.startswith(('.', '~')):
@@ -120,31 +110,28 @@ class LuaXrefMixin(object):
         return result
 
     def make_xrefs(self,
-                   rolename,  # type: unicode
-                   domain,  # type: unicode
-                   target,  # type: unicode
-                   innernode=nodes.emphasis,  # type: nodes.Node
-                   contnode=None,  # type: nodes.Node
-                   env=None,  # type: BuildEnvironment
-                   ):
-        # type: (...) -> List[nodes.Node]
+                   role_name: str,
+                   domain: str,
+                   target: str,
+                   innernode: type(nodes.Node) = nodes.emphasis,
+                   contnode: nodes.Node = None,
+                   env: BuildEnvironment = None,
+                   ) -> List[nodes.Node]:
         delims = r'(\s*[\[\]\(\),](?:\s*or\s)?\s*|\s+or\s+)'
         delims_re = re.compile(delims)
         sub_targets = re.split(delims, target)
 
-        split_contnode = bool(contnode and contnode.astext() == target)
+        split_cont_node = bool(contnode and contnode.astext() == target)
 
         results = []
         for sub_target in filter(None, sub_targets):
-            if split_contnode:
+            if split_cont_node:
                 contnode = nodes.Text(sub_target)
-
-            if delims_re.match(sub_target):  # type: ignore
+            if delims_re.match(sub_target):
                 results.append(contnode or innernode(sub_target, sub_target))
             else:
-                results.append(self.make_xref(rolename, domain, sub_target,
+                results.append(self.make_xref(role_name, domain, sub_target,
                                               innernode, contnode, env))
-
         return results
 
 
@@ -198,8 +185,7 @@ class LuaObject(ObjectDescription):
 
     allow_nesting = False
 
-    def get_signature_prefix(self, sig):
-        # type: (unicode) -> unicode
+    def get_signature_prefix(self, signature: str) -> str:
         """May return a prefix to put before the object name in the
         signature.
         """
@@ -213,15 +199,13 @@ class LuaObject(ObjectDescription):
             prefix.append('abstract')
         return ' '.join(prefix) + ' '
 
-    def needs_arglist(self):
-        # type: () -> bool
+    def needs_arg_list(self) -> bool:
         """May return true if an empty argument list is to be generated even if
         the document contains none.
         """
         return False
 
-    def handle_signature(self, sig, signode):
-        # type: (unicode, addnodes.desc_signature) -> Tuple[unicode, unicode]
+    def handle_signature(self, sig: str, sig_node: addnodes.desc_signature) -> Tuple[str, str]:
         """Transform a Lua signature into RST nodes.
 
         Return (fully qualified name of the thing, classname if any).
@@ -230,93 +214,91 @@ class LuaObject(ObjectDescription):
         * it is stripped from the displayed name if present
         * it is added to the full name (return value) if not present
         """
-        m = lua_sig_re.match(sig)  # type: ignore
+        m = lua_sig_re.match(sig)
         if m is None:
             raise ValueError
-        name_prefix, name, arglist, retann = m.groups()
+        name_prefix, name, arg_list, ret_ann = m.groups()
 
         # determine module and class name (if applicable), as well as full name
         modname = self.options.get(
             'module', self.env.ref_context.get('lua:module'))
-        classname = self.env.ref_context.get('lua:class')
-        if classname:
+        class_name = self.env.ref_context.get('lua:class')
+        if class_name:
             add_module = False
-            if name_prefix and name_prefix.startswith(classname):
+            if name_prefix and name_prefix.startswith(class_name):
                 fullname = name_prefix + name
                 # class name is given again in the signature
-                name_prefix = name_prefix[len(classname):].lstrip('.')
+                name_prefix = name_prefix[len(class_name):].lstrip('.')
             elif name_prefix:
                 # class name is given in the signature, but different
                 # (shouldn't happen)
-                fullname = classname + '.' + name_prefix + name
+                fullname = class_name + '.' + name_prefix + name
             else:
                 # class name is not given in the signature
-                fullname = classname + '.' + name
+                fullname = class_name + '.' + name
         else:
             add_module = True
             if name_prefix:
-                classname = name_prefix.rstrip('.')
+                class_name = name_prefix.rstrip('.')
                 fullname = name_prefix + name
             else:
-                classname = ''
+                class_name = ''
                 fullname = name
 
-        signode['module'] = modname
-        signode['class'] = classname
-        signode['fullname'] = fullname
+        sig_node['module'] = modname
+        sig_node['class'] = class_name
+        sig_node['fullname'] = fullname
 
         sig_prefix = self.get_signature_prefix(sig)
         if sig_prefix:
-            signode += addnodes.desc_annotation(sig_prefix, sig_prefix)
+            sig_node += addnodes.desc_annotation(sig_prefix, sig_prefix)
 
         if name_prefix:
-            signode += addnodes.desc_addname(name_prefix, name_prefix)
+            sig_node += addnodes.desc_addname(name_prefix, name_prefix)
         # exceptions are a special case, since they are documented in the
         # 'exceptions' module.
         elif add_module and self.env.config.add_module_names:
             modname = self.options.get(
                 'module', self.env.ref_context.get('lua:module'))
             if modname and modname != 'exceptions':
-                nodetext = modname + '.'
-                signode += addnodes.desc_addname(nodetext, nodetext)
+                node_text = modname + '.'
+                sig_node += addnodes.desc_addname(node_text, node_text)
 
-        anno = self.options.get('annotation')
+        annotation = self.options.get('annotation')
 
-        signode += addnodes.desc_name(name, name)
-        if not arglist:
-            if self.needs_arglist():
+        sig_node += addnodes.desc_name(name, name)
+        if not arg_list:
+            if self.needs_arg_list():
                 # for callables, add an empty parameter list
-                signode += addnodes.desc_parameterlist()
-            if retann:
-                signode += addnodes.desc_returns(retann, retann)
-            if anno:
-                signode += addnodes.desc_annotation(' ' + anno, ' ' + anno)
+                sig_node += addnodes.desc_parameterlist()
+            if ret_ann:
+                sig_node += addnodes.desc_returns(ret_ann, ret_ann)
+            if annotation:
+                sig_node += addnodes.desc_annotation(' ' + annotation, ' ' + annotation)
             return fullname, name_prefix
 
-        _pseudo_parse_arglist(signode, arglist)
-        if retann:
-            signode += addnodes.desc_returns(retann, retann)
-        if anno:
-            signode += addnodes.desc_annotation(' ' + anno, ' ' + anno)
+        _pseudo_parse_arglist(sig_node, arg_list)
+        if ret_ann:
+            sig_node += addnodes.desc_returns(ret_ann, ret_ann)
+        if annotation:
+            sig_node += addnodes.desc_annotation(' ' + annotation, ' ' + annotation)
         return fullname, name_prefix
 
-    def get_index_text(self, modname, name):
-        # type: (unicode, unicode) -> unicode
+    def get_index_text(self, modname: str, name: str) -> str:
         """Return the text for the index entry of the object."""
         raise NotImplementedError('must be implemented in subclasses')
 
-    def add_target_and_index(self, name_cls, sig, signode):
-        # type: (unicode, unicode, addnodes.desc_signature) -> None
+    def add_target_and_index(self, name_cls: str, sig: str, sig_node: addnodes.desc_signature) -> None:
         modname = self.options.get(
             'module', self.env.ref_context.get('lua:module'))
         fullname = (modname and modname + '.' or '') + name_cls[0]
         # note target
 
         if fullname not in self.state.document.ids:
-            signode['names'].append(fullname)
-            signode['ids'].append(fullname)
-            signode['first'] = (not self.names)
-            self.state.document.note_explicit_target(signode)
+            sig_node['names'].append(fullname)
+            sig_node['ids'].append(fullname)
+            sig_node['first'] = (not self.names)
+            self.state.document.note_explicit_target(sig_node)
             objects = self.env.domaindata['lua']['objects']
             if fullname in objects:
                 self.state_machine.reporter.warning(
@@ -332,8 +314,7 @@ class LuaObject(ObjectDescription):
             self.indexnode['entries'].append(('single', indextext,
                                               fullname, '', None))
 
-    def before_content(self):
-        # type: () -> None
+    def before_content(self) -> None:
         """Handle object nesting before content
 
         :lua:class:`LuaObject` represents Lua language constructs. For
@@ -366,8 +347,7 @@ class LuaObject(ObjectDescription):
             modules.append(self.env.ref_context.get('lua:module'))
             self.env.ref_context['lua:module'] = self.options['module']
 
-    def after_content(self):
-        # type: () -> None
+    def after_content(self) -> None:
         """Handle object de-nesting after content
 
         If this class is a nestable object, removing the last nested class prefix
@@ -398,12 +378,10 @@ class LuaModulelevel(LuaObject):
     Description of an object on module level (functions, data).
     """
 
-    def needs_arglist(self):
-        # type: () -> bool
+    def needs_arg_list(self) -> bool:
         return self.objtype == 'function'
 
-    def get_index_text(self, modname, name_cls):
-        # type: (unicode, unicode) -> unicode
+    def get_index_text(self, modname: str, name_cls: str) -> str:
         if self.objtype == 'function':
             if not modname:
                 return _('%s() (built-in function)') % name_cls[0]
@@ -425,8 +403,7 @@ class LuaClasslike(LuaObject):
 
     CLASS_DEF_RE = re.compile(r'^\s*([\w.]*)(?:\s*:\s*(.*))?')
 
-    def handle_signature(self, sig, signode):
-        # type: (unicode, addnodes.desc_signature) -> Tuple[unicode, unicode]
+    def handle_signature(self, sig: str, sig_node: addnodes.desc_signature) -> Tuple[str, str]:
         """Transform a Lua signature into RST nodes.
 
         Return (fully qualified name of the thing, classname if any).
@@ -435,13 +412,13 @@ class LuaClasslike(LuaObject):
         * it is stripped from the displayed name if present
         * it is added to the full name (return value) if not present
         """
-        m = self.CLASS_DEF_RE.match(sig)  # type: ignore
+        m = self.CLASS_DEF_RE.match(sig)
         if m is None:
             raise ValueError
 
         class_name, base_classes_raw = m.groups()
         if base_classes_raw:
-            base_classes = re.findall('[\w.]+', base_classes_raw)
+            base_classes = re.findall(r'[\w.]+', base_classes_raw)
         else:
             base_classes = []
 
@@ -449,50 +426,46 @@ class LuaClasslike(LuaObject):
         modname = self.options.get('module', self.env.ref_context.get('lua:module'))
         classname = self.env.ref_context.get('lua:class')
 
-        signode['module'] = modname
-        signode['class'] = classname
-        signode['fullname'] = class_name
+        sig_node['module'] = modname
+        sig_node['class'] = classname
+        sig_node['fullname'] = class_name
 
         sig_prefix = self.get_signature_prefix(sig)
         if sig_prefix:
-            signode += addnodes.desc_annotation(sig_prefix, sig_prefix)
-
+            sig_node += addnodes.desc_annotation(sig_prefix, sig_prefix)
 
         modname = self.options.get('module', self.env.ref_context.get('lua:module'))
         if modname and modname != 'exceptions':
             nodetext = modname + '.'
-            signode += addnodes.desc_addname(nodetext, nodetext)
+            sig_node += addnodes.desc_addname(nodetext, nodetext)
 
-
-        signode += addnodes.desc_name(class_name, class_name)
-        signode += addnodes.desc_annotation(": ", ": ")
+        sig_node += addnodes.desc_name(class_name, class_name)
+        sig_node += addnodes.desc_annotation(": ", ": ")
 
         for base in base_classes:
-            pnode = addnodes.pending_xref(
+            p_node = addnodes.pending_xref(
                 '', refdomain='lua', reftype='type',
                 reftarget=base, modname=None, classname=None)
-            pnode['lua:class'] = base
-            pnode += nodes.Text(base)
-            signode += pnode
+            p_node['lua:class'] = base
+            p_node += nodes.Text(base)
+            sig_node += p_node
 
-
-            signode += nodes.Text(', ')
-        signode.pop()
+            sig_node += nodes.Text(', ')
+        sig_node.pop()
 
         return class_name, ''
 
-    def add_target_and_index(self, name_cls, sig, signode):
-        # type: (unicode, unicode, addnodes.desc_signature) -> None
+    def add_target_and_index(self, name_cls: str, sig: str, sig_node: addnodes.desc_signature) -> None:
         modname = self.options.get('module', self.env.ref_context.get('lua:module'))
         fullname = (modname and modname + '.' or '') + name_cls[0]
         # note target
 
         if fullname not in self.state.document.ids:
-            signode['names'].append(fullname)
-            signode['ids'].append(fullname)
-            signode['first'] = (not self.names)
+            sig_node['names'].append(fullname)
+            sig_node['ids'].append(fullname)
+            sig_node['first'] = (not self.names)
 
-            self.state.document.note_explicit_target(signode)
+            self.state.document.note_explicit_target(sig_node)
             objects = self.env.domaindata['lua']['objects']
             if fullname in objects:
                 self.state_machine.reporter.warning(
@@ -503,17 +476,15 @@ class LuaClasslike(LuaObject):
                     line=self.lineno)
             objects[fullname] = (self.env.docname, self.objtype)
 
-        indextext = self.get_index_text(modname, name_cls)
-        if indextext:
-            self.indexnode['entries'].append(('single', indextext,
+        index_text = self.get_index_text(modname, name_cls)
+        if index_text:
+            self.indexnode['entries'].append(('single', index_text,
                                               fullname, '', None))
 
-    def get_signature_prefix(self, sig):
-        # type: (unicode) -> unicode
+    def get_signature_prefix(self, signature: str) -> str:
         return self.objtype + ' '
 
-    def get_index_text(self, modname, name_cls):
-        # type: (unicode, unicode) -> unicode
+    def get_index_text(self, modname: str, name_cls: str) -> str:
         if self.objtype == 'class':
             if not modname:
                 return _('%s (built-in class)') % name_cls[0]
@@ -526,39 +497,37 @@ class LuaClasslike(LuaObject):
 
 class LuaAliasObject(ObjectDescription):
     object_type = 'class'
-    ALIAS_RE = re.compile(r"^ *([\w.]*) *= *(.*)$")
+    ALIAS_RE = re.compile(r'^ *([\w.]*) *= *(.*)$')
 
-    def get_signature_prefix(self, signature):
-        # type: (unicode) -> unicode
+    def get_signature_prefix(self, signature: str) -> str:
         return 'alias '
 
-    def handle_signature(self, signature, signode):
-        # type: (unicode, addnodes.desc_signature) -> Tuple[unicode, unicode]
+    def handle_signature(self, signature: str, sig_node: addnodes.desc_signature) -> Tuple[str, str]:
         """Transform an alias declaration into RST nodes.
         .. lua:alias:: Bar = table<string, number>
         """
-        m = LuaAliasObject.ALIAS_RE.match(signature)  # type: ignore
+        m = LuaAliasObject.ALIAS_RE.match(signature)
         if m is None:
             raise ValueError
         alias, type_alias = m.groups()
 
-        signode['alias'] = alias
-        signode['type_alias'] = type_alias
+        sig_node['alias'] = alias
+        sig_node['type_alias'] = type_alias
 
         sig_prefix = self.get_signature_prefix(signature)
-        signode += addnodes.desc_annotation(sig_prefix, sig_prefix)
-        signode += addnodes.desc_name(alias, alias)
-        signode += addnodes.desc_annotation(": ", ": ")
-        signode += addnodes.desc_addname(type_alias, type_alias)
+        sig_node += addnodes.desc_annotation(sig_prefix, sig_prefix)
+        sig_node += addnodes.desc_name(alias, alias)
+        sig_node += addnodes.desc_annotation(": ", ": ")
+        sig_node += addnodes.desc_addname(type_alias, type_alias)
 
         return alias
 
-    def add_target_and_index(self, alias_name, sig, signode):
+    def add_target_and_index(self, alias_name: str, sig: str, sig_node: addnodes.desc_signature):
         if alias_name not in self.state.document.ids:
-            signode['names'].append(alias_name)
-            signode['ids'].append(alias_name)
-            signode['first'] = (not self.names)
-            self.state.document.note_explicit_target(signode)
+            sig_node['names'].append(alias_name)
+            sig_node['ids'].append(alias_name)
+            sig_node['first'] = (not self.names)
+            self.state.document.note_explicit_target(sig_node)
             objects = self.env.domaindata['lua']['objects']
             if alias_name in objects:
                 self.state_machine.reporter.warning(
@@ -588,72 +557,69 @@ class LuaClassmember(LuaObject):
     Description of a class member (methods, attributes).
     """
 
-    def needs_arglist(self):
-        # type: () -> bool
+    def needs_arg_list(self) -> bool:
         return self.objtype.endswith('method')
 
-    def get_signature_prefix(self, sig):
-        # type: (unicode) -> unicode
+    def get_signature_prefix(self, signature: str) -> str:
         if self.objtype == 'staticmethod':
             return 'static '
         elif self.objtype == 'classmethod':
             return 'classmethod '
-        return super(LuaClassmember, self).get_signature_prefix(sig)
+        return super(LuaClassmember, self).get_signature_prefix(signature)
 
-    def get_index_text(self, modname, name_cls):
-        # type: (unicode, unicode) -> unicode
+    def get_index_text(self, modname: str, name_cls: str) -> str:
         name, cls = name_cls
         add_modules = self.env.config.add_module_names
         if self.objtype == 'method':
             try:
-                clsname, methname = name.rsplit('.', 1)
+                class_name, method_name = name.rsplit('.', 1)
             except ValueError:
                 if modname:
                     return _('%s() (in module %s)') % (name, modname)
                 else:
                     return '%s()' % name
             if modname and add_modules:
-                return _('%s() (%s.%s method)') % (methname, modname, clsname)
+                return _('%s() (%s.%s method)') % (method_name, modname, class_name)
             else:
-                return _('%s() (%s method)') % (methname, clsname)
+                return _('%s() (%s method)') % (method_name, class_name)
         elif self.objtype == 'staticmethod':
             try:
-                clsname, methname = name.rsplit('.', 1)
+                class_name, method_name = name.rsplit('.', 1)
             except ValueError:
                 if modname:
                     return _('%s() (in module %s)') % (name, modname)
                 else:
                     return '%s()' % name
             if modname and add_modules:
-                return _('%s() (%s.%s static method)') % (methname, modname,
-                                                          clsname)
+                return _('%s() (%s.%s static method)') % (method_name, modname,
+                                                          class_name)
             else:
-                return _('%s() (%s static method)') % (methname, clsname)
+                return _('%s() (%s static method)') % (method_name, class_name)
         elif self.objtype == 'classmethod':
             try:
-                clsname, methname = name.rsplit('.', 1)
+                class_name, method_name = name.rsplit('.', 1)
             except ValueError:
                 if modname:
                     return _('%s() (in module %s)') % (name, modname)
                 else:
                     return '%s()' % name
             if modname:
-                return _('%s() (%s.%s class method)') % (methname, modname,
-                                                         clsname)
+                return _('%s() (%s.%s class method)') % (method_name, modname,
+                                                         class_name)
             else:
-                return _('%s() (%s class method)') % (methname, clsname)
+                return _('%s() (%s class method)') % (method_name, class_name)
         elif self.objtype == 'attribute':
             try:
-                clsname, attrname = name.rsplit('.', 1)
+                class_name, attr_name = name.rsplit('.', 1)
             except ValueError:
                 if modname:
                     return _('%s (in module %s)') % (name, modname)
                 else:
                     return name
             if modname and add_modules:
-                return _('%s (%s.%s attribute)') % (attrname, modname, clsname)
+                return _('%s (%s.%s attribute)') % (attr_name, modname, class_name)
             else:
-                return _('%s (%s attribute)') % (attrname, clsname)
+                return _('%s (%s attribute)') % (attr_name, class_name)
         else:
             return ''
 
@@ -663,14 +629,12 @@ class LuaDecoratorMixin(object):
     Mixin for decorator directives.
     """
 
-    def handle_signature(self, sig, signode):
-        # type: (unicode, addnodes.desc_signature) -> Tuple[unicode, unicode]
-        ret = super(LuaDecoratorMixin, self).handle_signature(sig, signode)  # type: ignore
+    def handle_signature(self, sig: str, signode: addnodes.desc_signature) -> Tuple[str, str]:
+        ret = super(LuaDecoratorMixin, self).handle_signature(sig, signode)
         signode.insert(0, addnodes.desc_addname('@', '@'))
         return ret
 
-    def needs_arglist(self):
-        # type: () -> bool
+    def needs_arg_list(self) -> bool:
         return False
 
 
@@ -679,8 +643,7 @@ class LuaDecoratorFunction(LuaDecoratorMixin, LuaModulelevel):
     Directive to mark functions meant to be used as decorators.
     """
 
-    def run(self):
-        # type: () -> List[nodes.Node]
+    def run(self) -> List[nodes.Node]:
         # a decorator function is a function after all
         self.name = 'lua:function'
         return LuaModulelevel.run(self)
@@ -691,8 +654,7 @@ class LuaDecoratorMethod(LuaDecoratorMixin, LuaClassmember):
     Directive to mark methods meant to be used as decorators.
     """
 
-    def run(self):
-        # type: () -> List[nodes.Node]
+    def run(self) -> List[nodes.Node]:
         self.name = 'lua:method'
         return LuaClassmember.run(self)
 
@@ -713,26 +675,25 @@ class LuaModule(Directive):
         'deprecated': directives.flag,
     }
 
-    def run(self):
-        # type: () -> List[nodes.Node]
+    def run(self) -> List[nodes.Node]:
         env = self.state.document.settings.env
         modname = self.arguments[0].strip()
-        noindex = 'noindex' in self.options
+        no_index = 'noindex' in self.options
         env.ref_context['lua:module'] = modname
         ret = []
-        if not noindex:
+        if not no_index:
             env.domaindata['lua']['modules'][modname] = \
                 (env.docname, self.options.get('synopsis', ''),
                  self.options.get('platform', ''), 'deprecated' in self.options)
             # make a duplicate entry in 'objects' to facilitate searching for
             # the module in LuaDomain.find_obj()
             env.domaindata['lua']['objects'][modname] = (env.docname, 'module')
-            targetnode = nodes.target('', '', ids=['module-' + modname],
+            target_node = nodes.target('', '', ids=['module-' + modname],
                                       ismod=True)
-            self.state.document.note_explicit_target(targetnode)
+            self.state.document.note_explicit_target(target_node)
             # the platform and synopsis aren't printed; in fact, they are only
             # used in the modindex currently
-            ret.append(targetnode)
+            ret.append(target_node)
             indextext = _('%s (module)') % modname
             inode = addnodes.index(entries=[('single', indextext,
                                              'module-' + modname, '', None)])
@@ -750,10 +711,9 @@ class LuaCurrentModule(Directive):
     required_arguments = 1
     optional_arguments = 0
     final_argument_whitespace = False
-    option_spec = {}  # type: Dict
+    option_spec: Dict = {}
 
-    def run(self):
-        # type: () -> List[nodes.Node]
+    def run(self) -> List[nodes.Node]:
         env = self.state.document.settings.env
         modname = self.arguments[0].strip()
         if modname == 'None':
@@ -764,10 +724,10 @@ class LuaCurrentModule(Directive):
 
 
 class LuaXRefRole(XRefRole):
-    def process_link(self, env, refnode, has_explicit_title, title, target):
-        # type: (BuildEnvironment, nodes.Node, bool, unicode, unicode) -> Tuple[unicode, unicode]  # NOQA
-        refnode['lua:module'] = env.ref_context.get('lua:module')
-        refnode['lua:class'] = env.ref_context.get('lua:class')
+    def process_link(self, env: BuildEnvironment, ref_node: nodes.Element, has_explicit_title: bool,
+                     title: str, target: str) -> Tuple[str, str]:
+        ref_node['lua:module'] = env.ref_context.get('lua:module')
+        ref_node['lua:class'] = env.ref_context.get('lua:class')
         if not has_explicit_title:
             title = title.lstrip('.')  # only has a meaning for the target
             target = target.lstrip('~')  # only has a meaning for the title
@@ -782,7 +742,7 @@ class LuaXRefRole(XRefRole):
         # else search builtins first
         if target[0:1] == '.':
             target = target[1:]
-            refnode['refspecific'] = True
+            ref_node['refspecific'] = True
         return title, target
 
 
@@ -795,19 +755,17 @@ class LuaModuleIndex(Index):
     localname = l_('Lua Module Index')
     shortname = l_('modules')
 
-    def generate(self, docnames=None):
-        # type: (Iterable[unicode]) -> Tuple[List[Tuple[unicode, List[List[Union[unicode, int]]]]], bool]  # NOQA
-        content = {}  # type: Dict[unicode, List]
+    def generate(self, docnames: Iterable[str] = None) -> Tuple[List[Tuple[str, List[List[Union[str, int]]]]], bool]:
+        content: Dict[str, List] = {}
         # list of prefixes to ignore
-        ignores = None  # type: List[unicode]
-        ignores = self.domain.env.config['modindex_common_prefix']  # type: ignore
+        ignores = self.domain.env.config['modindex_common_prefix']
         ignores = sorted(ignores, key=len, reverse=True)
         # list of all modules, sorted by module name
         modules = sorted(iteritems(self.domain.data['modules']),
                          key=lambda x: x[0].lower())
         # sort out collapsable modules
         prev_modname = ''
-        num_toplevels = 0
+        num_top_levels = 0
         for modname, (docname, synopsis, platforms, deprecated) in modules:
             if docnames and docname not in docnames:
                 continue
@@ -838,7 +796,7 @@ class LuaModuleIndex(Index):
                     entries.append([stripped + package, 1, '', '', '', '', ''])
                 subtype = 2
             else:
-                num_toplevels += 1
+                num_top_levels += 1
                 subtype = 0
 
             qualifier = deprecated and _('Deprecated') or ''
@@ -850,7 +808,7 @@ class LuaModuleIndex(Index):
         # apply heuristics when to collapse modindex at page load:
         # only collapse if number of toplevel modules is larger than
         # number of submodules
-        collapse = len(modules) - num_toplevels < num_toplevels
+        collapse = len(modules) - num_top_levels < num_top_levels
 
         # sort by first letter
         sorted_content = sorted(iteritems(content))
@@ -862,18 +820,18 @@ class LuaDomain(Domain):
     """Lua language domain."""
     name = 'lua'
     label = 'Lua'
-    object_types = {
-        'function':     ObjType(l_('function'),     'func', 'obj'),
-        'data':         ObjType(l_('data'),         'data', 'obj'),
-        'class':        ObjType(l_('class'),        'class', 'exc', 'obj'),
-        'alias':        ObjType(l_('alias'),        'alias', 'obj'),
-        'exception':    ObjType(l_('exception'),    'exc', 'class', 'obj'),
-        'method':       ObjType(l_('method'),       'meth', 'obj'),
-        'classmethod':  ObjType(l_('class method'), 'meth', 'obj'),
-        'staticmethod': ObjType(l_('static method'),'meth', 'obj'),
-        'attribute':    ObjType(l_('attribute'),    'attr', 'obj'),
-        'module':       ObjType(l_('module'),       'mod', 'obj'),
-    }  # type: Dict[unicode, ObjType]
+    object_types: Dict[str, ObjType] = {
+        'function': ObjType(l_('function'), 'func', 'obj'),
+        'data': ObjType(l_('data'), 'data', 'obj'),
+        'class': ObjType(l_('class'), 'class', 'exc', 'obj'),
+        'alias': ObjType(l_('alias'), 'alias', 'obj'),
+        'exception': ObjType(l_('exception'), 'exc', 'class', 'obj'),
+        'method': ObjType(l_('method'), 'meth', 'obj'),
+        'classmethod': ObjType(l_('class method'), 'meth', 'obj'),
+        'staticmethod': ObjType(l_('static method'), 'meth', 'obj'),
+        'attribute': ObjType(l_('attribute'), 'attr', 'obj'),
+        'module': ObjType(l_('module'), 'mod', 'obj'),
+    }
 
     directives = {
         'function': LuaModulelevel,
@@ -902,35 +860,33 @@ class LuaDomain(Domain):
         'mod': LuaXRefRole(),
         'obj': LuaXRefRole(),
     }
-    initial_data = {
+    initial_data: Dict[str, Dict[str, Tuple[Any]]] = {
         'objects': {},  # fullname -> docname, objtype
         'modules': {},  # modname -> docname, synopsis, platform, deprecated
-    }  # type: Dict[unicode, Dict[unicode, Tuple[Any]]]
+    }
     indices = [
         LuaModuleIndex,
     ]
 
-    def clear_doc(self, docname):
-        # type: (unicode) -> None
+    def clear_doc(self, doc_name: str) -> None:
         for fullname, (fn, _l) in list(self.data['objects'].items()):
-            if fn == docname:
+            if fn == doc_name:
                 del self.data['objects'][fullname]
         for modname, (fn, _x, _x, _x) in list(self.data['modules'].items()):
-            if fn == docname:
+            if fn == doc_name:
                 del self.data['modules'][modname]
 
-    def merge_domaindata(self, docnames, otherdata):
-        # type: (List[unicode], Dict) -> None
+    def merge_domaindata(self, doc_names: List[str], other_data: Dict) -> None:
         # XXX check duplicates?
-        for fullname, (fn, objtype) in otherdata['objects'].items():
-            if fn in docnames:
+        for fullname, (fn, objtype) in other_data['objects'].items():
+            if fn in doc_names:
                 self.data['objects'][fullname] = (fn, objtype)
-        for modname, data in otherdata['modules'].items():
-            if data[0] in docnames:
+        for modname, data in other_data['modules'].items():
+            if data[0] in doc_names:
                 self.data['modules'][modname] = data
 
-    def find_obj(self, env, modname, classname, name, type, searchmode=0):
-        # type: (BuildEnvironment, unicode, unicode, unicode, unicode, int) -> List[Tuple[unicode, Any]]  # NOQA
+    def find_obj(self, env: BuildEnvironment, modname: str, class_name: str, name: str, type: Optional[str],
+                 search_mode: int = 0) -> List[Tuple[str, Any]]:
         """Find a Lua object for "name", perhaps using the given module
         and/or classname.  Returns a list of (name, object entry) tuples.
         """
@@ -942,66 +898,65 @@ class LuaDomain(Domain):
             return []
 
         objects = self.data['objects']
-        matches = []  # type: List[Tuple[unicode, Any]]
+        matches: List[Tuple[str, Any]] = []
 
-        newname = None
-        if searchmode == 1:
+        new_name = None
+        if search_mode == 1:
             if type is None:
-                objtypes = list(self.object_types)
+                obj_types = list(self.object_types)
             else:
-                objtypes = self.objtypes_for_role(type)
-            if objtypes is not None:
-                if modname and classname:
-                    fullname = modname + '.' + classname + '.' + name
-                    if fullname in objects and objects[fullname][1] in objtypes:
-                        newname = fullname
-                if not newname:
+                obj_types = self.objtypes_for_role(type)
+            if obj_types is not None:
+                if modname and class_name:
+                    fullname = modname + '.' + class_name + '.' + name
+                    if fullname in objects and objects[fullname][1] in obj_types:
+                        new_name = fullname
+                if not new_name:
                     if modname and modname + '.' + name in objects and \
-                            objects[modname + '.' + name][1] in objtypes:
-                        newname = modname + '.' + name
-                    elif name in objects and objects[name][1] in objtypes:
-                        newname = name
+                            objects[modname + '.' + name][1] in obj_types:
+                        new_name = modname + '.' + name
+                    elif name in objects and objects[name][1] in obj_types:
+                        new_name = name
                     else:
                         # "fuzzy" searching mode
-                        searchname = '.' + name
+                        search_name = '.' + name
                         matches = [(oname, objects[oname]) for oname in objects
-                                   if oname.endswith(searchname) and
-                                   objects[oname][1] in objtypes]
+                                   if oname.endswith(search_name) and
+                                   objects[oname][1] in obj_types]
         else:
             # NOTE: searching for exact match, object type is not considered
             if name in objects:
-                newname = name
+                new_name = name
             elif type == 'mod':
                 # only exact matches allowed for modules
                 return []
-            elif classname and classname + '.' + name in objects:
-                newname = classname + '.' + name
+            elif class_name and class_name + '.' + name in objects:
+                new_name = class_name + '.' + name
             elif modname and modname + '.' + name in objects:
-                newname = modname + '.' + name
-            elif modname and classname and \
-                    modname + '.' + classname + '.' + name in objects:
-                newname = modname + '.' + classname + '.' + name
+                new_name = modname + '.' + name
+            elif modname and class_name and \
+                    modname + '.' + class_name + '.' + name in objects:
+                new_name = modname + '.' + class_name + '.' + name
             # special case: builtin exceptions have module "exceptions" set
             elif type == 'exc' and '.' not in name and \
                     'exceptions.' + name in objects:
-                newname = 'exceptions.' + name
+                new_name = 'exceptions.' + name
             # special case: object methods
             elif type in ('func', 'meth') and '.' not in name and \
                     'object.' + name in objects:
-                newname = 'object.' + name
-        if newname is not None:
-            matches.append((newname, objects[newname]))
+                new_name = 'object.' + name
+        if new_name is not None:
+            matches.append((new_name, objects[new_name]))
 
         return matches
 
-    def resolve_xref(self, env, fromdocname, builder,
-                     type, target, node, contnode):
-        # type: (BuildEnvironment, unicode, Builder, unicode, unicode, nodes.Node, nodes.Node) -> nodes.Node  # NOQA
+    def resolve_xref(self, env: BuildEnvironment, from_doc_name: str, builder: Builder,
+                     type: str, target: str, node: nodes.Element, cont_node: nodes.Node)-> Optional[nodes.Node]:
         modname = node.get('lua:module')
-        clsname = node.get('lua:class')
-        searchmode = node.hasattr('refspecific') and 1 or 0
-        matches = self.find_obj(env, modname, clsname, target,
-                                type, searchmode)
+        class_name = node.get('lua:class')
+        search_mode = node.hasattr('refspecific') and 1 or 0
+        matches = self.find_obj(env, modname, class_name, target,
+                                type, search_mode)
         if not matches:
             return None
         elif len(matches) > 1:
@@ -1012,34 +967,32 @@ class LuaDomain(Domain):
         name, obj = matches[0]
 
         if obj[1] == 'module':
-            return self._make_module_refnode(builder, fromdocname, name,
-                                             contnode)
+            return self._make_module_refnode(builder, from_doc_name, name,
+                                             cont_node)
         else:
-            return make_refnode(builder, fromdocname, obj[0], name,
-                                contnode, name)
+            return make_refnode(builder, from_doc_name, obj[0], name,
+                                cont_node, name)
 
-    def resolve_any_xref(self, env, fromdocname, builder, target,
-                         node, contnode):
-        # type: (BuildEnvironment, unicode, Builder, unicode, nodes.Node, nodes.Node) -> List[Tuple[unicode, nodes.Node]]  # NOQA
+    def resolve_any_xref(self, env: BuildEnvironment, from_doc_name: str, builder: Builder, target: str,
+                         node: nodes.Node, cont_node: nodes.Node) -> List[Tuple[str, nodes.Node]]:
         modname = node.get('lua:module')
-        clsname = node.get('lua:class')
-        results = []  # type: List[Tuple[unicode, nodes.Node]]
+        class_name = node.get('lua:class')
+        results:  List[Tuple[str, nodes.Node]] = []
 
         # always search in "refspecific" mode with the :any: role
-        matches = self.find_obj(env, modname, clsname, target, None, 1)
+        matches = self.find_obj(env, modname, class_name, target, None, 1)
         for name, obj in matches:
             if obj[1] == 'module':
                 results.append(('lua:mod',
-                                self._make_module_refnode(builder, fromdocname,
-                                                          name, contnode)))
+                                self._make_module_refnode(builder, from_doc_name,
+                                                          name, cont_node)))
             else:
                 results.append(('lua:' + self.role_for_objtype(obj[1]),
-                                make_refnode(builder, fromdocname, obj[0], name,
-                                             contnode, name)))
+                                make_refnode(builder, from_doc_name, obj[0], name,
+                                             cont_node, name)))
         return results
 
-    def _make_module_refnode(self, builder, fromdocname, name, contnode):
-        # type: (Builder, unicode, unicode, nodes.Node) -> nodes.Node
+    def _make_module_refnode(self, builder: Builder, fromdocname: str, name: str, cont_node: nodes.Node) -> nodes.Node:
         # get additional info for modules
         docname, synopsis, platform, deprecated = self.data['modules'][name]
         title = name
@@ -1050,25 +1003,23 @@ class LuaDomain(Domain):
         if platform:
             title += ' (' + platform + ')'
         return make_refnode(builder, fromdocname, docname,
-                            'module-' + name, contnode, title)
+                            'module-' + name, cont_node, title)
 
-    def get_objects(self):
-        # type: () -> Iterator[Tuple[unicode, unicode, unicode, unicode, unicode, int]]
+    def get_objects(self) -> Iterator[Tuple[str, str, str, str, str, int]]:
         for modname, info in iteritems(self.data['modules']):
             yield (modname, modname, 'module', info[0], 'module-' + modname, 0)
         for refname, (docname, type) in iteritems(self.data['objects']):
             if type != 'module':  # modules are already handled
                 yield (refname, refname, type, docname, refname, 1)
 
-    def get_full_qualified_name(self, node):
-        # type: (nodes.Node) -> unicode
+    def get_full_qualified_name(self, node: nodes.Element) -> Optional[str]:
         modname = node.get('lua:module')
-        clsname = node.get('lua:class')
+        class_name = node.get('lua:class')
         target = node.get('reftarget')
         if target is None:
             return None
         else:
-            return '.'.join(filter(None, [modname, clsname, target]))
+            return '.'.join(filter(None, [modname, class_name, target]))
 
 
 def setup(app):
