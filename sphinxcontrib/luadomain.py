@@ -423,6 +423,91 @@ class LuaClasslike(LuaObject):
 
     allow_nesting = True
 
+    CLASS_DEF_RE = re.compile(r'^\s*([\w.]*)(?:\s*:\s*(.*))?')
+
+    def handle_signature(self, sig, signode):
+        # type: (unicode, addnodes.desc_signature) -> Tuple[unicode, unicode]
+        """Transform a Lua signature into RST nodes.
+
+        Return (fully qualified name of the thing, classname if any).
+
+        If inside a class, the current class name is handled intelligently:
+        * it is stripped from the displayed name if present
+        * it is added to the full name (return value) if not present
+        """
+        m = self.CLASS_DEF_RE.match(sig)  # type: ignore
+        if m is None:
+            raise ValueError
+
+        class_name, base_classes_raw = m.groups()
+        if base_classes_raw:
+            base_classes = re.findall('[\w.]+', base_classes_raw)
+        else:
+            base_classes = []
+
+        # determine module and class name (if applicable), as well as full name
+        modname = self.options.get('module', self.env.ref_context.get('lua:module'))
+        classname = self.env.ref_context.get('lua:class')
+
+        signode['module'] = modname
+        signode['class'] = classname
+        signode['fullname'] = class_name
+
+        sig_prefix = self.get_signature_prefix(sig)
+        if sig_prefix:
+            signode += addnodes.desc_annotation(sig_prefix, sig_prefix)
+
+
+        modname = self.options.get('module', self.env.ref_context.get('lua:module'))
+        if modname and modname != 'exceptions':
+            nodetext = modname + '.'
+            signode += addnodes.desc_addname(nodetext, nodetext)
+
+
+        signode += addnodes.desc_name(class_name, class_name)
+        signode += addnodes.desc_annotation(": ", ": ")
+
+        for base in base_classes:
+            pnode = addnodes.pending_xref(
+                '', refdomain='lua', reftype='type',
+                reftarget=base, modname=None, classname=None)
+            pnode['lua:class'] = base
+            pnode += nodes.Text(base)
+            signode += pnode
+
+
+            signode += nodes.Text(', ')
+        signode.pop()
+
+        return class_name, ''
+
+    def add_target_and_index(self, name_cls, sig, signode):
+        # type: (unicode, unicode, addnodes.desc_signature) -> None
+        modname = self.options.get('module', self.env.ref_context.get('lua:module'))
+        fullname = (modname and modname + '.' or '') + name_cls[0]
+        # note target
+
+        if fullname not in self.state.document.ids:
+            signode['names'].append(fullname)
+            signode['ids'].append(fullname)
+            signode['first'] = (not self.names)
+
+            self.state.document.note_explicit_target(signode)
+            objects = self.env.domaindata['lua']['objects']
+            if fullname in objects:
+                self.state_machine.reporter.warning(
+                    'duplicate object description of %s, ' % fullname +
+                    'other instance in ' +
+                    self.env.doc2path(objects[fullname][0]) +
+                    ', use :noindex: for one of them',
+                    line=self.lineno)
+            objects[fullname] = (self.env.docname, self.objtype)
+
+        indextext = self.get_index_text(modname, name_cls)
+        if indextext:
+            self.indexnode['entries'].append(('single', indextext,
+                                              fullname, '', None))
+
     def get_signature_prefix(self, sig):
         # type: (unicode) -> unicode
         return self.objtype + ' '
@@ -912,7 +997,6 @@ class LuaDomain(Domain):
     def resolve_xref(self, env, fromdocname, builder,
                      type, target, node, contnode):
         # type: (BuildEnvironment, unicode, Builder, unicode, unicode, nodes.Node, nodes.Node) -> nodes.Node  # NOQA
-
         modname = node.get('lua:module')
         clsname = node.get('lua:class')
         searchmode = node.hasattr('refspecific') and 1 or 0
