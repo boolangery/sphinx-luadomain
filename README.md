@@ -12,7 +12,12 @@ Full example:
    A type alias.
 
 
-.. lua:class:: Foo
+.. lua:class:: Base
+
+    A base class
+
+
+.. lua:class:: Foo: Base
 
     My super lua class.
 
