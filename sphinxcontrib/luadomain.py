@@ -170,10 +170,6 @@ class LuaObject(ObjectDescription):
                              'keyword', 'kwarg', 'kwparam'),
                       typerolename='class', typenames=('paramtype', 'type'),
                       can_collapse=True),
-        LuaTypedField('attribute', label=l_('Attributes'), rolename='obj',
-                      names=('attribute', 'var', 'ivar', 'cvar'),
-                      typerolename='class', typenames=('atttype',),
-                      can_collapse=True),
         LuaGroupedField('exceptions', label=l_('Raises'), rolename='exc',
                         names=('raises', 'raise', 'exception', 'except'),
                         can_collapse=True),
@@ -493,6 +489,69 @@ class LuaClasslike(LuaObject):
             return name_cls[0]
         else:
             return ''
+
+
+class LuaClassAttribute(LuaObject):
+    """
+    Description of a class attribute.
+    """
+    allow_nesting = True
+    ATTRIBUTE_DEF_RE = re.compile(r'^\s*([\w.]*)(?:\s*:\s*(.*))?')
+
+    def handle_signature(self, signature: str, sig_node: addnodes.desc_signature) -> Tuple[str, str]:
+        m = self.ATTRIBUTE_DEF_RE.match(signature)
+        if m is None:
+            raise ValueError
+
+        attr_name, attr_type = m.groups()
+
+        # determine module and class name (if applicable), as well as full name
+        modname = self.options.get('module', self.env.ref_context.get('lua:module'))
+        classname = self.env.ref_context.get('lua:class')
+
+        sig_node['module'] = modname
+        sig_node['class'] = classname
+        sig_node['fullname'] = attr_name
+
+        sig_node += addnodes.desc_name(attr_name, attr_name)
+        sig_node += addnodes.desc_annotation(": ", ": ")
+        sig_node += addnodes.desc_type(attr_type, attr_type)
+
+        return attr_name
+
+    def add_target_and_index(self, name: str, sig: str, sig_node: addnodes.desc_signature) -> None:
+        mod_name = self.options.get('module', self.env.ref_context.get('lua:module'))
+        full_name = (mod_name and mod_name + '.' or '') + name
+
+        if full_name not in self.state.document.ids:
+            sig_node['names'].append(full_name)
+            sig_node['ids'].append(full_name)
+            sig_node['first'] = (not self.names)
+
+            self.state.document.note_explicit_target(sig_node)
+            objects = self.env.domaindata['lua']['objects']
+            if full_name in objects:
+                self.state_machine.reporter.warning(
+                    'duplicate object description of %s, ' % full_name +
+                    'other instance in ' +
+                    self.env.doc2path(objects[full_name][0]) +
+                    ', use :noindex: for one of them',
+                    line=self.lineno)
+            objects[full_name] = (self.env.docname, self.objtype)
+
+        index_text = self.get_index_text(full_name)
+        if index_text:
+            self.indexnode['entries'].append(('single', index_text,
+                                              full_name, '', None))
+
+    def before_content(self):
+        pass
+
+    def after_content(self):
+        pass
+
+    def get_index_text(self, attr):
+        return _('%s (attribute)') % attr
 
 
 class LuaAliasObject(ObjectDescription):
@@ -842,7 +901,7 @@ class LuaDomain(Domain):
         'method': LuaClassmember,
         'classmethod': LuaClassmember,
         'staticmethod': LuaClassmember,
-        'attribute': LuaClassmember,
+        'attribute': LuaClassAttribute,
         'module': LuaModule,
         'currentmodule': LuaCurrentModule,
         'decorator': LuaDecoratorFunction,

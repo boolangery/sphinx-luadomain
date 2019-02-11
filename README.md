@@ -16,8 +16,9 @@ Full example:
 
     A base class
     
-    :attribute name: class name
-    :atttype name: str
+    .. lua:attribute:: clsName: string
+
+        The class name
 
 
 .. lua:class:: Foo: Base
