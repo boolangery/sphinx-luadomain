@@ -119,9 +119,6 @@ class LuaObject(ObjectDescription):
                              'keyword', 'kwarg', 'kwparam'),
                       typerolename='class', typenames=('paramtype', 'type'),
                       can_collapse=True),
-        LuaGroupedField('exceptions', label=l_('Raises'), rolename='exc',
-                        names=('raises', 'raise', 'exception', 'except'),
-                        can_collapse=True),
         Field('returnvalue', label=l_('Returns'), has_arg=False,
               names=('returns', 'return')),
         LuaField('returntype', label=l_('Return type'), has_arg=False,
@@ -200,12 +197,10 @@ class LuaObject(ObjectDescription):
 
         if name_prefix:
             sig_node += addnodes.desc_addname(name_prefix, name_prefix)
-        # exceptions are a special case, since they are documented in the
-        # 'exceptions' module.
         elif add_module and self.env.config.add_module_names:
             modname = self.options.get(
                 'module', self.env.ref_context.get('lua:module'))
-            if modname and modname != 'exceptions':
+            if modname:
                 node_text = modname + '.'
                 sig_node += addnodes.desc_addname(node_text, node_text)
 
@@ -318,7 +313,7 @@ class LuaObject(ObjectDescription):
                 self.env.ref_context.pop('lua:module')
 
 
-class LuaModulelevel(LuaObject):
+class LuaModuleLevel(LuaObject):
     """
     Description of an object on module level (functions, data).
     """
@@ -339,9 +334,9 @@ class LuaModulelevel(LuaObject):
             return ''
 
 
-class LuaClasslike(LuaObject):
+class LuaClassLike(LuaObject):
     """
-    Description of a class-like object (classes, interfaces, exceptions).
+    Description of a class-like object (classes, interfaces).
     """
 
     allow_nesting = True
@@ -380,7 +375,7 @@ class LuaClasslike(LuaObject):
             sig_node += addnodes.desc_annotation(sig_prefix, sig_prefix)
 
         modname = self.options.get('module', self.env.ref_context.get('lua:module'))
-        if modname and modname != 'exceptions':
+        if modname:
             nodetext = modname + '.'
             sig_node += addnodes.desc_addname(nodetext, nodetext)
 
@@ -560,7 +555,7 @@ class LuaAliasObject(ObjectDescription):
         return _('%s (alias)') % alias_name
 
 
-class LuaClassmember(LuaObject):
+class LuaClassMember(LuaObject):
     """
     Description of a class member (methods, attributes).
     """
@@ -573,7 +568,7 @@ class LuaClassmember(LuaObject):
             return 'static '
         elif self.objtype == 'classmethod':
             return 'classmethod '
-        return super(LuaClassmember, self).get_signature_prefix(signature)
+        return super(LuaClassMember, self).get_signature_prefix(signature)
 
     def get_index_text(self, modname: str, name_cls: str) -> str:
         name, cls = name_cls
@@ -630,41 +625,6 @@ class LuaClassmember(LuaObject):
                 return _('%s (%s attribute)') % (attr_name, class_name)
         else:
             return ''
-
-
-class LuaDecoratorMixin(object):
-    """
-    Mixin for decorator directives.
-    """
-
-    def handle_signature(self, sig: str, signode: addnodes.desc_signature) -> Tuple[str, str]:
-        ret = super(LuaDecoratorMixin, self).handle_signature(sig, signode)
-        signode.insert(0, addnodes.desc_addname('@', '@'))
-        return ret
-
-    def needs_arg_list(self) -> bool:
-        return False
-
-
-class LuaDecoratorFunction(LuaDecoratorMixin, LuaModulelevel):
-    """
-    Directive to mark functions meant to be used as decorators.
-    """
-
-    def run(self) -> List[nodes.Node]:
-        # a decorator function is a function after all
-        self.name = 'lua:function'
-        return LuaModulelevel.run(self)
-
-
-class LuaDecoratorMethod(LuaDecoratorMixin, LuaClassmember):
-    """
-    Directive to mark methods meant to be used as decorators.
-    """
-
-    def run(self) -> List[nodes.Node]:
-        self.name = 'lua:method'
-        return LuaClassmember.run(self)
 
 
 class LuaModule(Directive):
@@ -837,19 +797,17 @@ class LuaDomain(Domain):
     }
 
     directives = {
-        'function': LuaModulelevel,
-        'data': LuaModulelevel,
-        'class': LuaClasslike,
+        'function': LuaModuleLevel,
+        'data': LuaModuleLevel,
+        'class': LuaClassLike,
         'alias': LuaAliasObject,
-        'exception': LuaClasslike,
-        'method': LuaClassmember,
-        'classmethod': LuaClassmember,
-        'staticmethod': LuaClassmember,
+        'exception': LuaClassLike,
+        'method': LuaClassMember,
+        'classmethod': LuaClassMember,
+        'staticmethod': LuaClassMember,
         'attribute': LuaClassAttribute,
         'module': LuaModule,
         'currentmodule': LuaCurrentModule,
-        'decorator': LuaDecoratorFunction,
-        'decoratormethod': LuaDecoratorMethod,
     }
     roles = {
         'data': LuaXRefRole(),
@@ -918,10 +876,6 @@ class LuaDomain(Domain):
         elif modname and class_name and \
                 modname + '.' + class_name + '.' + name in objects:
             new_name = modname + '.' + class_name + '.' + name
-        # special case: builtin exceptions have module "exceptions" set
-        elif type == 'exc' and '.' not in name and \
-                'exceptions.' + name in objects:
-            new_name = 'exceptions.' + name
         # special case: object methods
         elif type in ('func', 'meth') and '.' not in name and \
                 'object.' + name in objects:
