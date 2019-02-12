@@ -84,66 +84,15 @@ def _pseudo_parse_arglist(sig_node: addnodes.desc_signature, arg_list: str) -> N
         sig_node += param_list
 
 
-# This override allows our inline type specifiers to behave like :class: link
-# when it comes to handling "." and "~" prefixes.
-class LuaXrefMixin(object):
-    def make_xref(self,
-                  role_name: str,
-                  domain: str,
-                  target: str,
-                  innernode: type(nodes.Node) = nodes.emphasis,
-                  contnode: nodes.Node = None,
-                  env: BuildEnvironment = None,
-                  ) -> nodes.Node:
-        result = super(LuaXrefMixin, self).make_xref(role_name, domain, target,
-                                                     innernode, contnode, env)
-        result['refspecific'] = True
-        if target.startswith(('.', '~')):
-            prefix, result['reftarget'] = target[0], target[1:]
-            if prefix == '.':
-                text = target[1:]
-            elif prefix == '~':
-                text = target.split('.')[-1]
-            for node in result.traverse(nodes.Text):
-                node.parent[node.parent.index(node)] = nodes.Text(text)
-                break
-        return result
-
-    def make_xrefs(self,
-                   role_name: str,
-                   domain: str,
-                   target: str,
-                   innernode: type(nodes.Node) = nodes.emphasis,
-                   contnode: nodes.Node = None,
-                   env: BuildEnvironment = None,
-                   ) -> List[nodes.Node]:
-        delims = r'(\s*[\[\]\(\),](?:\s*or\s)?\s*|\s+or\s+)'
-        delims_re = re.compile(delims)
-        sub_targets = re.split(delims, target)
-
-        split_cont_node = bool(contnode and contnode.astext() == target)
-
-        results = []
-        for sub_target in filter(None, sub_targets):
-            if split_cont_node:
-                contnode = nodes.Text(sub_target)
-            if delims_re.match(sub_target):
-                results.append(contnode or innernode(sub_target, sub_target))
-            else:
-                results.append(self.make_xref(role_name, domain, sub_target,
-                                              innernode, contnode, env))
-        return results
-
-
-class LuaField(LuaXrefMixin, Field):
+class LuaField(Field):
     pass
 
 
-class LuaGroupedField(LuaXrefMixin, GroupedField):
+class LuaGroupedField(GroupedField):
     pass
 
 
-class LuaTypedField(LuaXrefMixin, TypedField):
+class LuaTypedField(TypedField):
     pass
 
 
@@ -797,11 +746,6 @@ class LuaXRefRole(XRefRole):
                 dot = title.rfind('.')
                 if dot != -1:
                     title = title[dot + 1:]
-        # if the first character is a dot, search more specific namespaces first
-        # else search builtins first
-        if target[0:1] == '.':
-            target = target[1:]
-            ref_node['refspecific'] = True
         return title, target
 
 
@@ -960,50 +904,29 @@ class LuaDomain(Domain):
         matches: List[Tuple[str, Any]] = []
 
         new_name = None
-        if search_mode == 1:
-            if type is None:
-                obj_types = list(self.object_types)
-            else:
-                obj_types = self.objtypes_for_role(type)
-            if obj_types is not None:
-                if modname and class_name:
-                    fullname = modname + '.' + class_name + '.' + name
-                    if fullname in objects and objects[fullname][1] in obj_types:
-                        new_name = fullname
-                if not new_name:
-                    if modname and modname + '.' + name in objects and \
-                            objects[modname + '.' + name][1] in obj_types:
-                        new_name = modname + '.' + name
-                    elif name in objects and objects[name][1] in obj_types:
-                        new_name = name
-                    else:
-                        # "fuzzy" searching mode
-                        search_name = '.' + name
-                        matches = [(oname, objects[oname]) for oname in objects
-                                   if oname.endswith(search_name) and
-                                   objects[oname][1] in obj_types]
-        else:
-            # NOTE: searching for exact match, object type is not considered
-            if name in objects:
-                new_name = name
-            elif type == 'mod':
-                # only exact matches allowed for modules
-                return []
-            elif class_name and class_name + '.' + name in objects:
-                new_name = class_name + '.' + name
-            elif modname and modname + '.' + name in objects:
-                new_name = modname + '.' + name
-            elif modname and class_name and \
-                    modname + '.' + class_name + '.' + name in objects:
-                new_name = modname + '.' + class_name + '.' + name
-            # special case: builtin exceptions have module "exceptions" set
-            elif type == 'exc' and '.' not in name and \
-                    'exceptions.' + name in objects:
-                new_name = 'exceptions.' + name
-            # special case: object methods
-            elif type in ('func', 'meth') and '.' not in name and \
-                    'object.' + name in objects:
-                new_name = 'object.' + name
+
+        # NOTE: searching for exact match, object type is not considered
+        if name in objects:
+            new_name = name
+        elif type == 'mod':
+            # only exact matches allowed for modules
+            return []
+        elif class_name and class_name + '.' + name in objects:
+            new_name = class_name + '.' + name
+        elif modname and modname + '.' + name in objects:
+            new_name = modname + '.' + name
+        elif modname and class_name and \
+                modname + '.' + class_name + '.' + name in objects:
+            new_name = modname + '.' + class_name + '.' + name
+        # special case: builtin exceptions have module "exceptions" set
+        elif type == 'exc' and '.' not in name and \
+                'exceptions.' + name in objects:
+            new_name = 'exceptions.' + name
+        # special case: object methods
+        elif type in ('func', 'meth') and '.' not in name and \
+                'object.' + name in objects:
+            new_name = 'object.' + name
+
         if new_name is not None:
             matches.append((new_name, objects[new_name]))
 
@@ -1013,7 +936,7 @@ class LuaDomain(Domain):
                      type: str, target: str, node: nodes.Element, cont_node: nodes.Node)-> Optional[nodes.Node]:
         modname = node.get('lua:module')
         class_name = node.get('lua:class')
-        search_mode = node.hasattr('refspecific') and 1 or 0
+        search_mode = 0
         matches = self.find_obj(env, modname, class_name, target,
                                 type, search_mode)
         if not matches:
