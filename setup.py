@@ -14,7 +14,7 @@ def readme():
 
 setup(
     name='sphinxcontrib-luadomain',
-    version='1.0.1',
+    version='1.1.0',
     license='BSD',
     author='Eliott Dumeix',
     description='Sphinx domain for documenting Lua code',
