@@ -10,7 +10,6 @@
 """
 
 import re
-from six import iteritems
 from docutils import nodes
 from docutils.parsers.rst import Directive, directives
 from sphinx import addnodes
@@ -724,7 +723,7 @@ class LuaModuleIndex(Index):
         ignores = self.domain.env.config['modindex_common_prefix']
         ignores = sorted(ignores, key=len, reverse=True)
         # list of all modules, sorted by module name
-        modules = sorted(iteritems(self.domain.data['modules']),
+        modules = sorted(self.domain.data['modules'].items(),
                          key=lambda x: x[0].lower())
         # sort out collapsable modules
         prev_modname = ''
@@ -774,7 +773,7 @@ class LuaModuleIndex(Index):
         collapse = len(modules) - num_top_levels < num_top_levels
 
         # sort by first letter
-        sorted_content = sorted(iteritems(content))
+        sorted_content = sorted(content.items())
 
         return sorted_content, collapse
 
@@ -942,9 +941,9 @@ class LuaDomain(Domain):
                             'module-' + name, cont_node, title)
 
     def get_objects(self) -> Iterator[Tuple[str, str, str, str, str, int]]:
-        for modname, info in iteritems(self.data['modules']):
+        for modname, info in self.data['modules'].items():
             yield (modname, modname, 'module', info[0], 'module-' + modname, 0)
-        for refname, (docname, type) in iteritems(self.data['objects']):
+        for refname, (docname, type) in self.data['objects'].items():
             if type != 'module':  # modules are already handled
                 yield (refname, refname, type, docname, refname, 1)
 

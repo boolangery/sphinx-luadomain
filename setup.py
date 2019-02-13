@@ -4,12 +4,6 @@ from __future__ import with_statement
 from setuptools import setup, find_packages
 
 
-requires = [
-    'Sphinx >= 1.5',
-    'six'
-]
-
-
 def readme():
     try:
         with open('README.md') as f:
@@ -41,6 +35,6 @@ setup(
     platforms='any',
     packages=find_packages(),
     include_package_data=True,
-    install_requires=requires,
+    install_requires=['Sphinx'],
     namespace_packages=['sphinxcontrib'],
 )
