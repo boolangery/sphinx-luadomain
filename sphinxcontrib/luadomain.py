@@ -460,7 +460,8 @@ class LuaClassAttribute(LuaObject):
         sig_node += addnodes.desc_annotation(": ", ": ")
         sig_node += addnodes.desc_type(attr_type, attr_type)
 
-        return attr_name
+        full_attr_name = ".".join(filter(None, [modname, classname, attr_name]))
+        return full_attr_name
 
     def add_target_and_index(self, name: str, sig: str, sig_node: addnodes.desc_signature) -> None:
         mod_name = self.options.get('module', self.env.ref_context.get('lua:module'))
