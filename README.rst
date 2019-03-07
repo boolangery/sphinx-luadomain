@@ -135,3 +135,13 @@ Type alias
 
             :param packet: the packet to send
             :type packet: Packet
+
+
+Cross-references
+-------------------------------------------------------------------------------
+
+.. code-block:: rst
+
+    :lua:class:`pl.List`
+
+    :lua:meth:`pl.List.append`
