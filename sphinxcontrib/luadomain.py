@@ -14,15 +14,18 @@ from docutils import nodes
 from docutils.parsers.rst import Directive, directives
 from sphinx import addnodes
 from sphinx.roles import XRefRole
-from sphinx.locale import l_, _
 from sphinx.domains import Domain, ObjType, Index
 from sphinx.directives import ObjectDescription
+from sphinx.locale import get_translation
 from sphinx.util import logging
 from sphinx.util.nodes import make_refnode
 from sphinx.util.docfields import Field, GroupedField, TypedField
 from sphinx.environment import BuildEnvironment
 from sphinx.builders import Builder
 from typing import Any, Dict, Iterable, Iterator, List, Tuple, Optional, Union
+
+MESSAGE_CATALOG_NAME = 'sphinx-luadomain'
+_ = get_translation(MESSAGE_CATALOG_NAME)
 
 logger = logging.getLogger(__name__)
 
@@ -113,14 +116,14 @@ class LuaObject(ObjectDescription):
     }
 
     doc_field_types = [
-        LuaTypedField('parameter', label=l_('Parameters'),
+        LuaTypedField('parameter', label=_('Parameters'),
                       names=('param', 'parameter', 'arg', 'argument',
                              'keyword', 'kwarg', 'kwparam'),
                       typerolename='class', typenames=('paramtype', 'type'),
                       can_collapse=True),
-        Field('returnvalue', label=l_('Returns'), has_arg=False,
+        Field('returnvalue', label=_('Returns'), has_arg=False,
               names=('returns', 'return')),
-        LuaField('returntype', label=l_('Return type'), has_arg=False,
+        LuaField('returntype', label=_('Return type'), has_arg=False,
                  names=('rtype',), bodyrolename='class'),
     ]
 
@@ -715,8 +718,8 @@ class LuaModuleIndex(Index):
     """
 
     name = 'modindex'
-    localname = l_('Lua Module Index')
-    shortname = l_('modules')
+    localname = _('Lua Module Index')
+    shortname = _('modules')
 
     def generate(self, docnames: Iterable[str] = None) -> Tuple[List[Tuple[str, List[List[Union[str, int]]]]], bool]:
         content: Dict[str, List] = {}
@@ -784,16 +787,16 @@ class LuaDomain(Domain):
     name = 'lua'
     label = 'Lua'
     object_types: Dict[str, ObjType] = {
-        'function': ObjType(l_('function'), 'func', 'obj'),
-        'data': ObjType(l_('data'), 'data', 'obj'),
-        'class': ObjType(l_('class'), 'class', 'exc', 'obj'),
-        'alias': ObjType(l_('alias'), 'alias', 'obj'),
-        'exception': ObjType(l_('exception'), 'exc', 'class', 'obj'),
-        'method': ObjType(l_('method'), 'meth', 'obj'),
-        'classmethod': ObjType(l_('class method'), 'meth', 'obj'),
-        'staticmethod': ObjType(l_('static method'), 'meth', 'obj'),
-        'attribute': ObjType(l_('attribute'), 'attr', 'obj'),
-        'module': ObjType(l_('module'), 'mod', 'obj'),
+        'function': ObjType(_('function'), 'func', 'obj'),
+        'data': ObjType(('data'), 'data', 'obj'),
+        'class': ObjType(_('class'), 'class', 'exc', 'obj'),
+        'alias': ObjType(_('alias'), 'alias', 'obj'),
+        'exception': ObjType(_('exception'), 'exc', 'class', 'obj'),
+        'method': ObjType(_('method'), 'meth', 'obj'),
+        'classmethod': ObjType(_('class method'), 'meth', 'obj'),
+        'staticmethod': ObjType(_('static method'), 'meth', 'obj'),
+        'attribute': ObjType(_('attribute'), 'attr', 'obj'),
+        'module': ObjType(_('module'), 'mod', 'obj'),
     }
 
     directives = {
