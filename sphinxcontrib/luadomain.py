@@ -329,7 +329,7 @@ class LuaObject(ObjectDescription):
                 self.state_machine.reporter.warning(
                     'duplicate object description of %s, ' % fullname +
                     'other instance in ' +
-                    self.env.doc2path(objects[fullname][0]) +
+                    str(self.env.doc2path(objects[fullname][0])) +
                     ', use :noindex: for one of them',
                     line=self.lineno)
             objects[fullname] = (self.env.docname, self.objtype)
@@ -496,7 +496,7 @@ class LuaClassLike(LuaObject):
                 self.state_machine.reporter.warning(
                     'duplicate object description of %s, ' % fullname +
                     'other instance in ' +
-                    self.env.doc2path(objects[fullname][0]) +
+                    str(self.env.doc2path(objects[fullname][0])) +
                     ', use :noindex: for one of them',
                     line=self.lineno)
             objects[fullname] = (self.env.docname, self.objtype)
@@ -564,7 +564,7 @@ class LuaClassAttribute(LuaObject):
                 self.state_machine.reporter.warning(
                     'duplicate object description of %s, ' % full_name +
                     'other instance in ' +
-                    self.env.doc2path(objects[full_name][0]) +
+                    str(self.env.doc2path(objects[full_name][0])) +
                     ', use :noindex: for one of them',
                     line=self.lineno)
             objects[full_name] = (self.env.docname, self.objtype)
@@ -622,7 +622,7 @@ class LuaAliasObject(ObjectDescription):
                 self.state_machine.reporter.warning(
                     'duplicate object description of %s, ' % alias_name +
                     'other instance in ' +
-                    self.env.doc2path(objects[alias_name][0]) +
+                    str(self.env.doc2path(objects[alias_name][0])) +
                     ', use :noindex: for one of them',
                     line=self.lineno)
             objects[alias_name] = (self.env.docname, self.object_type)
