@@ -53,7 +53,7 @@ Documenting class
             :param elem: The element to append
             :type elem: any
 
-        .. lua:staticmethod:: fromArray(a)-> pl.List
+        .. lua:staticmethod:: fromArray(a) -> pl.List
 
             Create a List from a raw array.
 
@@ -67,7 +67,7 @@ Class handle inheritance:
 
     .. lua:class:: ITransport
 
-        .. lua:method:: startEngine()-> boolean
+        .. lua:method:: startEngine() -> boolean
             :virtual:
 
             :return: true if engine started
@@ -75,7 +75,7 @@ Class handle inheritance:
 
     .. lua:class:: Car: ITransport
 
-        .. lua:method:: startEngine()-> boolean
+        .. lua:method:: startEngine() -> boolean
 
             :return: true if engine started
             :rtype: boolean
@@ -101,7 +101,7 @@ Documenting module
 
     .. lua:module:: pl.path
 
-    .. lua:function:: join(p1, p2)-> str
+    .. lua:function:: join(p1, p2) -> str
 
         Return the path resulting from combining the individual paths.
 
