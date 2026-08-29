@@ -1,1 +1,2 @@
 recursive-include sphinx_lua/templates *.rst
+include LICENSE
