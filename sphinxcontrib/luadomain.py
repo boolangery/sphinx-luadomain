@@ -29,6 +29,42 @@ _ = get_translation(MESSAGE_CATALOG_NAME)
 
 logger = logging.getLogger(__name__)
 
+# Official metamethod names, from the Lua 5.4 reference manual, section 2.4
+# "Metatables and Metamethods": https://www.lua.org/manual/5.4/manual.html#2.4
+KNOWN_LUA_METAMETHODS = frozenset([
+    '__add', '__sub', '__mul', '__div', '__mod', '__pow', '__unm', '__idiv',
+    '__band', '__bor', '__bxor', '__bnot', '__shl', '__shr',
+    '__concat', '__len', '__eq', '__lt', '__le',
+    '__index', '__newindex', '__call',
+    '__gc', '__close', '__mode', '__name',
+])
+
+
+def _split_top_level_types(type_str: str) -> List[str]:
+    """Split a type annotation on commas that are not nested inside
+    (), [], <> or {} (e.g. keep "table<string, number>" intact, but
+    split "integer, integer" into two parts).
+    """
+    opening = {'(': ')', '[': ']', '<': '>', '{': '}'}
+    closing = {v: k for k, v in opening.items()}
+    parts = []
+    current = ''
+    stack: List[str] = []
+    for ch in type_str:
+        if ch == ',' and not stack:
+            parts.append(current.strip())
+            current = ''
+            continue
+        if ch in opening:
+            stack.append(ch)
+        elif ch in closing and stack and stack[-1] == closing[ch]:
+            stack.pop()
+        current += ch
+    if current.strip():
+        parts.append(current.strip())
+    return parts
+
+
 # REs for Lua signatures
 lua_sig_re = re.compile(
     r'''^ ([\w.]*\.)?            # class name(s)
@@ -86,7 +122,54 @@ def _pseudo_parse_arglist(sig_node: addnodes.desc_signature, arg_list: str) -> N
         sig_node += param_list
 
 
-class LuaField(Field):
+def _make_return_node(ret_ann: str, modname: Optional[str], class_name: Optional[str]) -> addnodes.desc_returns:
+    """Build a return-annotation node, linking each comma-separated
+    return type individually (Lua functions commonly return several
+    values, e.g. ``string.find`` returning start and end indices).
+
+    :param modname: enclosing module, used to resolve unqualified
+        cross-reference targets (mirrors what :class:`LuaXRefRole` sets
+        on role-based cross-references).
+    :param class_name: enclosing class, same purpose as ``modname``.
+    """
+    returns_node = addnodes.desc_returns()
+    types = _split_top_level_types(ret_ann) or [ret_ann]
+    for i, one_type in enumerate(types):
+        if i:
+            returns_node += nodes.Text(', ')
+        p_node = addnodes.pending_xref(
+            '', refdomain='lua', reftype='obj',
+            reftarget=one_type, modname=None, classname=None)
+        p_node['lua:module'] = modname
+        p_node['lua:class'] = class_name
+        p_node += nodes.Text(one_type)
+        returns_node += p_node
+    return returns_node
+
+
+class MultiTypeXrefMixin:
+    """Mixin for doc fields whose body may hold several comma-separated
+    types (e.g. multi-value Lua returns, or union parameter types),
+    linking each type individually instead of treating the whole body
+    as one (usually unresolvable) cross-reference target.
+    """
+
+    def make_xrefs(self, rolename, domain, target, innernode=addnodes.literal_emphasis,
+                   contnode=None, env=None, inliner=None, location=None):
+        types = _split_top_level_types(target)
+        if len(types) <= 1:
+            return super().make_xrefs(rolename, domain, target, innernode,
+                                      contnode, env, inliner, location)
+        result: List[nodes.Node] = []
+        for i, one_type in enumerate(types):
+            if i:
+                result.append(nodes.Text(', '))
+            result.extend(super().make_xrefs(rolename, domain, one_type, innernode,
+                                             None, env, inliner, location))
+        return result
+
+
+class LuaField(MultiTypeXrefMixin, Field):
     pass
 
 
@@ -94,7 +177,7 @@ class LuaGroupedField(GroupedField):
     pass
 
 
-class LuaTypedField(TypedField):
+class LuaTypedField(MultiTypeXrefMixin, TypedField):
     pass
 
 
@@ -214,14 +297,14 @@ class LuaObject(ObjectDescription):
                 # for callables, add an empty parameter list
                 sig_node += addnodes.desc_parameterlist()
             if ret_ann:
-                sig_node += addnodes.desc_returns(ret_ann, ret_ann)
+                sig_node += _make_return_node(ret_ann, modname, class_name)
             if annotation:
                 sig_node += addnodes.desc_annotation(' ' + annotation, ' ' + annotation)
             return fullname, name_prefix
 
         _pseudo_parse_arglist(sig_node, arg_list)
         if ret_ann:
-            sig_node += addnodes.desc_returns(ret_ann, ret_ann)
+            sig_node += _make_return_node(ret_ann, modname, class_name)
         if annotation:
             sig_node += addnodes.desc_annotation(' ' + annotation, ' ' + annotation)
         return fullname, name_prefix
@@ -571,12 +654,37 @@ class LuaClassMember(LuaObject):
             return 'static '
         elif self.objtype == 'classmethod':
             return 'classmethod '
+        elif self.objtype == 'metamethod':
+            return 'metamethod '
         return super(LuaClassMember, self).get_signature_prefix(signature)
+
+    def handle_signature(self, sig: str, sig_node: addnodes.desc_signature) -> Tuple[str, str]:
+        fullname, name_prefix = super(LuaClassMember, self).handle_signature(sig, sig_node)
+        if self.objtype == 'metamethod':
+            method_name = fullname.rsplit('.', 1)[-1]
+            if method_name not in KNOWN_LUA_METAMETHODS:
+                self.state_machine.reporter.warning(
+                    '%r is not a known Lua metamethod, see Lua manual '
+                    'section 2.4 (Metatables and Metamethods)' % method_name,
+                    line=self.lineno)
+        return fullname, name_prefix
 
     def get_index_text(self, modname: str, name_cls: str) -> str:
         name, cls = name_cls
         add_modules = self.env.config.add_module_names
-        if self.objtype == 'method':
+        if self.objtype == 'metamethod':
+            try:
+                class_name, method_name = name.rsplit('.', 1)
+            except ValueError:
+                if modname:
+                    return _('%s() (in module %s)') % (name, modname)
+                else:
+                    return '%s()' % name
+            if modname and add_modules:
+                return _('%s() (%s.%s metamethod)') % (method_name, modname, class_name)
+            else:
+                return _('%s() (%s metamethod)') % (method_name, class_name)
+        elif self.objtype == 'method':
             try:
                 class_name, method_name = name.rsplit('.', 1)
             except ValueError:
@@ -795,6 +903,7 @@ class LuaDomain(Domain):
         'method': ObjType(_('method'), 'meth', 'obj'),
         'classmethod': ObjType(_('class method'), 'meth', 'obj'),
         'staticmethod': ObjType(_('static method'), 'meth', 'obj'),
+        'metamethod': ObjType(_('metamethod'), 'meth', 'obj'),
         'attribute': ObjType(_('attribute'), 'attr', 'obj'),
         'module': ObjType(_('module'), 'mod', 'obj'),
     }
@@ -808,6 +917,7 @@ class LuaDomain(Domain):
         'method': LuaClassMember,
         'classmethod': LuaClassMember,
         'staticmethod': LuaClassMember,
+        'metamethod': LuaClassMember,
         'attribute': LuaClassAttribute,
         'module': LuaModule,
         'currentmodule': LuaCurrentModule,
